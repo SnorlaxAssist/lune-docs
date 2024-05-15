@@ -116,7 +116,8 @@ local function virtualizeModule(module : any, protectedFunctions : Protection, l
 		end,
 		__newindex = function()
 			error("bad")
-		end
+		end,
+		__metatable = "The metatable is locked"
 	})
 	return virtualizedModule
 end
@@ -149,6 +150,7 @@ local SANDBOXED_LUNE_STD_LIB = {
 		ewrite = sandboxPrint, -- TODO: do this
 	}, {
 		__index = virtualizeLibrary("stdio", FLAG_ALL_FUNCTIONS),
+		__metatable = "The metatable is locked"
 	}),
 	["@lune/net"] = virtualizeLibrary("net", {
 		request = true,
