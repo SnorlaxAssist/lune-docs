@@ -1,11 +1,7 @@
 local fs = require("@lune/fs")
 local luau = require("@lune/luau")
 local process = require("@lune/process")
-local serde = require("@lune/serde")
 local stdio = require("@lune/stdio")
-local task = require("@lune/task")
-local regex = require("@lune/regex")
-local datetime = require("@lune/datetime")
 
 local processArgs = table.clone(process.args)
 local filePath: string = table.remove(processArgs, 1)
@@ -22,28 +18,6 @@ local SANDBOXED_ENV = {
 		warn = nil,
 	},
 }
-
-local PROMPT_MSG_TMPL = `allow {SANDBOXED_ENV.debugName} to access %s?`
-local DENIED_ERR_TMPL = `{SANDBOXED_ENV.debugName} tried to access disallowed library %s!`
-
-local function constructSandboxMt(requirePath: string)
-	return function(self, key)
-		local module = require(requirePath)
-		return module[key]
-	end
-end
-
-local function constructProtectedLibMt(libName: string)
-	return function(self, key)
-		local allow: boolean = stdio.prompt("confirm", string.format(PROMPT_MSG_TMPL, libName))
-
-		if allow then
-			return constructSandboxMt(`@lune/{libName}`)(self, key)
-		end
-
-		error(string.format(DENIED_ERR_TMPL, "fs"))
-	end
-end
 
 local function discoverAndReadScript(filePath: string): string
 	local scriptContents: string
@@ -80,11 +54,7 @@ local function discoverAndReadScript(filePath: string): string
 end
 
 local function sandboxGetfenv(): {}
-	if table.isfrozen(SANDBOXED_ENV) then
-		return SANDBOXED_ENV.environment
-	end
-
-	return {}
+	return table.freeze(SANDBOXED_ENV)
 end
 
 local function sandboxSetfenv(env: {}): never
@@ -97,48 +67,83 @@ local function sandboxPrint(...: any)
 	DEFAULT_PRINT(`---------------------------------------`)
 end
 
-local SANDBOXED_LUNE_STD_LIB = {
-	["@lune/fs"] = setmetatable({}, {
-		__index = constructProtectedLibMt("fs"),
-	}),
-	["@lune/luau"] = setmetatable({}, {
-		__index = constructProtectedLibMt("luau")
-	}),
-	["@lune/process"] = setmetatable({}, {
-		__index = constructProtectedLibMt("process"),
-	}),
-	["@lune/stdio"] = setmetatable({
-		write = sandboxPrint,
-		ewrite = sandboxPrint,
-	}, {
-		__index = constructSandboxMt("@lune/stdio"),
-	}),
-	["@lune/net"] = setmetatable({}, {
-		__index = constructProtectedLibMt("net"),
-	}),
-	["@lune/roblox"] = setmetatable({
-		getAuthCookie = function(...)
-			local allowAuthCookie: boolean = stdio.prompt(
-				"confirm",
-				`allow {SANDBOXED_ENV.debugName} to access your .ROBLOSECURITY token?`
-			)
+local FLAG_ALL_FUNCTIONS = {};
 
-			if allowAuthCookie then
-				local getAuthCookie = constructSandboxMt("@lune/roblox")({}, "getAuthCookie")
-				return getAuthCookie(...)
+type Protection = {
+	[string]: Protection | string | boolean | (() -> (string | boolean))
+}
+
+local function virtualizeModule(module : any, protectedFunctions : Protection, lib : string)
+	local virtualTree = {}
+	local virtualizedModule = setmetatable({}, {
+		__index = function(self, key)
+			local virtualValue = virtualTree[key]
+			if (virtualValue) then
+				return virtualValue
+			end
+			local value = module[key];
+			local flag = protectedFunctions == FLAG_ALL_FUNCTIONS or protectedFunctions[key]
+			if type(value) == "function" then
+				return function(...)
+					if (flag) then
+						local allowExecution: boolean = stdio.prompt(
+							"confirm",
+							if type(flag) == "string" then
+								flag
+							elseif type(flag) == "function" then
+								flag()
+							else
+								`allow {SANDBOXED_ENV.debugName} to access {lib}.{key}?`
+						)
+						assert(allowExecution, `{lib}.{key} is protected`)
+					end
+					return value(...)
+				end
+			elseif (type(value) == "table") then
+				local virtualizedValue = virtualizeModule(
+					value,
+					if type(flag) == "table" then flag else protectedFunctions,
+					`{lib}.{key}`
+				)
+				virtualTree[key] = virtualizedValue
+				return virtualizedValue
 			end
 
-			error(
-				`{SANDBOXED_ENV.debugName} attempted to access .ROBLOSECURITY token even when denied`
-			)
+			return module[key]
 		end,
+		__newindex = function()
+			error("bad")
+		end
+	})
+	return virtualizedModule
+end
+
+local function virtualizeLibrary(lib : string, protectedFunctions : Protection)
+	local luneModule = require(`@lune/{lib}`)
+
+	return virtualizeModule(luneModule, protectedFunctions, lib);
+end
+
+local SANDBOXED_LUNE_STD_LIB = {
+	["@lune/fs"] = virtualizeLibrary("fs", FLAG_ALL_FUNCTIONS),
+	["@lune/luau"] = virtualizeLibrary("luau", FLAG_ALL_FUNCTIONS),
+	["@lune/process"] = virtualizeLibrary("process", FLAG_ALL_FUNCTIONS),
+	["@lune/stdio"] = setmetatable({
+		write = sandboxPrint,
+		ewrite = sandboxPrint, -- TODO: do this
 	}, {
-		__index = constructSandboxMt("@lune/roblox"),
+		__index = virtualizeLibrary("stdio", FLAG_ALL_FUNCTIONS),
 	}),
-	["@lune/serde"] = serde,
-	["@lune/task"] = task,
-	["@lune/regex"] = regex,
-	["@lune/datetime"] = datetime,
+	["@lune/net"] = virtualizeLibrary("net", FLAG_ALL_FUNCTIONS),
+	["@lune/roblox"] = virtualizeLibrary("roblox", {
+		getAuthCookie = function()
+			return `allow {SANDBOXED_ENV.debugName} to access your .ROBLOSECURITY token?`
+		end
+	}),
+	["@lune/serde"] = virtualizeLibrary("serde", FLAG_ALL_FUNCTIONS),
+	["@lune/task"] = virtualizeLibrary("task", FLAG_ALL_FUNCTIONS),
+	["@lune/regex"] = virtualizeLibrary("regex", FLAG_ALL_FUNCTIONS),
+	["@lune/datetime"] = virtualizeLibrary("datetime", FLAG_ALL_FUNCTIONS),
 }
 
 local function sandboxedRequire(path: string)
