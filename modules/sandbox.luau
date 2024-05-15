@@ -54,7 +54,10 @@ local function discoverAndReadScript(filePath: string): string
 end
 
 local function sandboxGetfenv(): {}
-	return table.freeze(SANDBOXED_ENV)
+	if table.isfrozen(SANDBOXED_ENV.environment) then
+		return SANDBOXED_ENV.environment
+	end
+	return table.freeze(SANDBOXED_ENV.environment)
 end
 
 local function sandboxSetfenv(env: {}): never
