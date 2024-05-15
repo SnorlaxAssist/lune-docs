@@ -129,16 +129,7 @@ local function virtualizeLibrary(lib : string, protectedFunctions : Protection)
 end
 
 local SANDBOXED_LUNE_STD_LIB = {
-	["@lune/fs"] = virtualizeLibrary("fs", {
-		copy = true,
-		move = true,
-		writeFile = true,
-		writeDir = true,
-		readFile = true,
-		readDir = true,
-		removeFile = true,
-		removeDir = true,
-	}),
+	["@lune/fs"] = virtualizeLibrary("fs", FLAG_ALL_FUNCTIONS),
 	["@lune/luau"] = virtualizeLibrary("luau", {
 		load = true,
 	}),
@@ -152,10 +143,7 @@ local SANDBOXED_LUNE_STD_LIB = {
 		__index = virtualizeLibrary("stdio", FLAG_ALL_FUNCTIONS),
 		__metatable = "The metatable is locked"
 	}),
-	["@lune/net"] = virtualizeLibrary("net", {
-		request = true,
-		socket = true
-	}),
+	["@lune/net"] = virtualizeLibrary("net", FLAG_ALL_FUNCTIONS),
 	["@lune/roblox"] = virtualizeLibrary("roblox", {
 		getAuthCookie = `allow {SANDBOXED_ENV.debugName} to access your .ROBLOSECURITY token?`,
 	}),
@@ -164,7 +152,6 @@ local SANDBOXED_LUNE_STD_LIB = {
 	["@lune/regex"] = virtualizeLibrary("regex", {}),
 	["@lune/datetime"] = virtualizeLibrary("datetime", {}),
 }
-
 local function sandboxedRequire(path: string)
 	local module = SANDBOXED_LUNE_STD_LIB[path]
 
