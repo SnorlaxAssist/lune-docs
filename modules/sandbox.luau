@@ -128,25 +128,39 @@ local function virtualizeLibrary(lib : string, protectedFunctions : Protection)
 end
 
 local SANDBOXED_LUNE_STD_LIB = {
-	["@lune/fs"] = virtualizeLibrary("fs", FLAG_ALL_FUNCTIONS),
-	["@lune/luau"] = virtualizeLibrary("luau", FLAG_ALL_FUNCTIONS),
-	["@lune/process"] = virtualizeLibrary("process", FLAG_ALL_FUNCTIONS),
+	["@lune/fs"] = virtualizeLibrary("fs", {
+		copy = true,
+		move = true,
+		writeFile = true,
+		writeDir = true,
+		readFile = true,
+		readDir = true,
+		removeFile = true,
+		removeDir = true,
+	}),
+	["@lune/luau"] = virtualizeLibrary("luau", {
+		load = true,
+	}),
+	["@lune/process"] = virtualizeLibrary("process", {
+		spawn = true,
+	}),
 	["@lune/stdio"] = setmetatable({
 		write = sandboxPrint,
 		ewrite = sandboxPrint, -- TODO: do this
 	}, {
 		__index = virtualizeLibrary("stdio", FLAG_ALL_FUNCTIONS),
 	}),
-	["@lune/net"] = virtualizeLibrary("net", FLAG_ALL_FUNCTIONS),
-	["@lune/roblox"] = virtualizeLibrary("roblox", {
-		getAuthCookie = function()
-			return `allow {SANDBOXED_ENV.debugName} to access your .ROBLOSECURITY token?`
-		end
+	["@lune/net"] = virtualizeLibrary("net", {
+		request = true,
+		socket = true
 	}),
-	["@lune/serde"] = virtualizeLibrary("serde", FLAG_ALL_FUNCTIONS),
-	["@lune/task"] = virtualizeLibrary("task", FLAG_ALL_FUNCTIONS),
-	["@lune/regex"] = virtualizeLibrary("regex", FLAG_ALL_FUNCTIONS),
-	["@lune/datetime"] = virtualizeLibrary("datetime", FLAG_ALL_FUNCTIONS),
+	["@lune/roblox"] = virtualizeLibrary("roblox", {
+		getAuthCookie = `allow {SANDBOXED_ENV.debugName} to access your .ROBLOSECURITY token?`,
+	}),
+	["@lune/serde"] = virtualizeLibrary("serde", {}),
+	["@lune/task"] = virtualizeLibrary("task", {}),
+	["@lune/regex"] = virtualizeLibrary("regex", {}),
+	["@lune/datetime"] = virtualizeLibrary("datetime", {}),
 }
 
 local function sandboxedRequire(path: string)
