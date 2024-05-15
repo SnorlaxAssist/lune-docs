@@ -129,7 +129,7 @@ local function scanModuleSource(source: string , sourceName : string): {string}
 			
 			local stringContent = cleansrc
 				:gsub("\"", "")
-				:gsub("[%[%]]", "")
+				:gsub("[%[%]=]", "")
 
 			if isLuneModule(stringContent) then
 				table.insert(modulesInUse, stringContent)
